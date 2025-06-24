@@ -1,6 +1,7 @@
 {
   "name": "vscode-context-bridge",
   "displayName": "VS Code Context Bridge",
+  "publisher": "tsahil01",
   "version": "1.0.0",
   "description": "Bridges VS Code editor context to external Node.js processes via HTTP/WebSocket",
   "engines": {
@@ -36,7 +37,7 @@
         "properties": {
           "vscodeContextBridge.port": {
             "type": "number",
-            "default": 3000,
+            "default": 3210,
             "description": "Port for the VS Code Context Bridge server"
           },
           "vscodeContextBridge.shareDiagnostics": {
