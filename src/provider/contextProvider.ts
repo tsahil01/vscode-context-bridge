@@ -60,9 +60,12 @@ export class ContextProvider extends EventEmitter {
         if (!activeEditor) {
             return null;
         }
-
+        const ignoreFiles = this.config.get<string[]>('ignoreFiles') ?? [];
+        const filePath = activeEditor.document.fileName;
+        if (ignoreFiles.some(pattern => filePath.includes(pattern))) {
+            return null;
+        }
         const document = activeEditor.document;
-
         return {
             path: document.fileName,
             name: document.fileName.split('/').pop() || document.fileName.split('\\').pop() || 'unknown',
@@ -70,7 +73,6 @@ export class ContextProvider extends EventEmitter {
             content: document.getText(),
             lineCount: document.lineCount,
             isDirty: document.isDirty,
-
         }
     }
 
@@ -79,9 +81,12 @@ export class ContextProvider extends EventEmitter {
         if (!activeEditor || activeEditor.selection.isEmpty) {
             return null;
         }
-
+        const ignoreFiles = this.config.get<string[]>('ignoreFiles') ?? [];
+        const filePath = activeEditor.document.fileName;
+        if (ignoreFiles.some(pattern => filePath.includes(pattern))) {
+            return null;
+        }
         const selection = activeEditor.selection;
-
         return {
             startLine: selection.start.line,
             endLine: selection.end.line,
@@ -97,13 +102,17 @@ export class ContextProvider extends EventEmitter {
 
     private getOpenTabsInfo(): OpenTabInfo[] {
         const openTabs: OpenTabInfo[] = [];
-
+        const ignoreFiles = this.config.get<string[]>('ignoreFiles') ?? [];
         vscode.window.tabGroups.all.forEach(grp => {
             grp.tabs.forEach(tab => {
                 if (tab.input instanceof vscode.TabInputText) {
                     const document = tab.input.uri;
+                    const filePath = document.fsPath;
+                    if (ignoreFiles.some(pattern => filePath.includes(pattern))) {
+                        return;
+                    }
                     openTabs.push({
-                        path: document.fsPath,
+                        path: filePath,
                         name: document.path.split('/').pop() || document.path.split('\\').pop() || 'unknown',
                         language: this.getLangFromUri(document),
                         isActive: tab.isActive,
@@ -112,7 +121,6 @@ export class ContextProvider extends EventEmitter {
                 }
             })
         })
-
         return openTabs;
     }
 
@@ -133,6 +141,9 @@ export class ContextProvider extends EventEmitter {
         if (gitApi) {
             for (const repo of gitApi.repositories) {
                 for (const change of repo.state.workingTreeChanges) {
+                    if ((this.config.get<string[]>('ignoreFiles') ?? []).includes(change.uri.fsPath)) {
+                        continue;
+                    }
                     const filePath = change.uri.fsPath;
                     const fileName = change.uri.path.split('/').pop() || change.uri.path.split('\\').pop() || 'unknown';
                     let diffText = '';
@@ -201,6 +212,9 @@ export class ContextProvider extends EventEmitter {
         const diagnosticCollection = vscode.languages.getDiagnostics();
 
         for (const [uri, diags] of diagnosticCollection) {
+            if ((this.config.get<string[]>('ignoreFiles') ?? []).includes(uri.fsPath)) {
+                continue;
+            }
             if (uri.scheme === 'file') {
                 const fileDiagnostics = diags.map(diag => ({
                     message: diag.message,

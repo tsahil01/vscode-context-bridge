@@ -76,6 +76,7 @@ function showStatus() {
     const port = config.get<number>('port', 3000);
     const shareDiagnostics = config.get<boolean>('shareDiagnostics', true);
     const shareDiffs = config.get<boolean>('shareDiffs', true);
+    const ignoreFiles = config.get<string[]>('ignoreFiles') ?? [];
 
     const status = isRunning ? 'Running' : 'Stopped';
 
@@ -84,6 +85,7 @@ function showStatus() {
         `Server: ${status}\n` +
         `Port: ${port}\n` +
         `Share Diagnostics: ${shareDiagnostics ? 'Yes' : 'No'}\n` +
+        `Ignore Files: ${ignoreFiles.join(', ')}\n` +
         `Share Diffs: ${shareDiffs ? 'Yes' : 'No'}`
     );
 } 
