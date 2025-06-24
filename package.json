@@ -1,0 +1,22 @@
+{
+  "name": "vscode-context-bridge",
+  "version": "1.0.0",
+  "description": "Bridges VS Code editor context to external Node.js processes via HTTP/WebSocket",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tsahil01/vscode-context-bridge.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/tsahil01/vscode-context-bridge/issues"
+  },
+  "homepage": "https://github.com/tsahil01/vscode-context-bridge#readme",
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+}
