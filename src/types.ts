@@ -75,7 +75,7 @@ export interface ContextData {
     activeFile: ActiveFileInfo | null;
     textSelection: TextSelectionInfo | null;
     openTabs: OpenTabInfo[];
-    diffs: DiffInfo[];
-    diagnostics: DiagnosticInfo[];
+    diffs: DiffInfo[] | null;
+    diagnostics: DiagnosticInfo[] | null;
     timestamp: number;
 }

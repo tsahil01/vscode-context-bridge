@@ -18,14 +18,15 @@ export class ContextProvider extends EventEmitter {
         const diffs = await this.getDiffsInfo();
         const diagnostics = await this.getDiagnosticsInfo();
 
-        return {
+        const context: ContextData = {
             activeFile,
             textSelection,
             openTabs,
-            diffs,
-            diagnostics,
+            diffs: diffs === null ? null : diffs,
+            diagnostics: diagnostics === null ? null : diagnostics,
             timestamp: Date.now()
         };
+        return context;
     }
 
     async executeCommand(cmd: CommandRequest): Promise<CommandResponse> {
@@ -62,7 +63,7 @@ export class ContextProvider extends EventEmitter {
         }
         const ignoreFiles = this.config.get<string[]>('ignoreFiles') ?? [];
         const filePath = activeEditor.document.fileName;
-        if (ignoreFiles.some(pattern => filePath.includes(pattern))) {
+        if (ignoreFiles.some(pattern => filePath.toLowerCase().includes(pattern.trim().toLowerCase()))) {
             return null;
         }
         const document = activeEditor.document;
@@ -124,21 +125,21 @@ export class ContextProvider extends EventEmitter {
         return openTabs;
     }
 
-    private async getDiffsInfo(): Promise<DiffInfo[]> {
-        const diffs: DiffInfo[] = [];
+    private async getDiffsInfo(): Promise<DiffInfo[] | null> {
         const shareDiffs = this.config.get<boolean>('shareDiffs', true);
         if (!shareDiffs) {
-            return diffs;
+            return null;
         }
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders) {
-            return diffs;
+            return null;
         }
 
         const gitExtension = vscode.extensions.getExtension('vscode.git')?.exports;
         const gitApi = gitExtension?.getAPI(1);
 
         if (gitApi) {
+            const diffs: DiffInfo[] = [];
             for (const repo of gitApi.repositories) {
                 for (const change of repo.state.workingTreeChanges) {
                     if ((this.config.get<string[]>('ignoreFiles') ?? []).includes(change.uri.fsPath)) {
@@ -169,8 +170,9 @@ export class ContextProvider extends EventEmitter {
                     });
                 }
             }
+            return diffs;
         }
-        return diffs;
+        return null;
     }
 
     private parseGitDiff(diffText: string): DiffChange[] {
@@ -202,10 +204,10 @@ export class ContextProvider extends EventEmitter {
         return changes;
     }
 
-    private async getDiagnosticsInfo(): Promise<DiagnosticInfo[]> {
+    private async getDiagnosticsInfo(): Promise<DiagnosticInfo[] | null> {
         const shareDiagnostics = this.config.get<boolean>('shareDiagnostics', true);
         if (!shareDiagnostics) {
-            return [];
+            return null;
         }
 
         const diagnostics: DiagnosticInfo[] = [];
