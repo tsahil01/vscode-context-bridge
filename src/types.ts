@@ -70,3 +70,12 @@ export interface CommandResponse {
     error?: string;
     message: string;
 }
+
+export interface ContextData {
+    activeFile: ActiveFileInfo | null;
+    textSelection: TextSelectionInfo | null;
+    openTabs: OpenTabInfo[];
+    diffs: DiffInfo[];
+    diagnostics: DiagnosticInfo[];
+    timestamp: number;
+}

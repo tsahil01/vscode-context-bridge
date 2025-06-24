@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ActiveFileInfo, CommandRequest, CommandResponse, DiagnosticInfo, DiffChange, DiffInfo, OpenTabInfo, TextSelectionInfo } from '../types';
+import { ActiveFileInfo, CommandRequest, CommandResponse, ContextData, DiagnosticInfo, DiffChange, DiffInfo, OpenTabInfo, TextSelectionInfo } from '../types';
 import { languageMap } from '../const';
 
 export class ContextProvider {
@@ -9,10 +9,43 @@ export class ContextProvider {
         this.config = vscode.workspace.getConfiguration('vscodeContextBridge');
     }
 
-    async getContext() {
+    async getContext(): Promise<ContextData> {
+        const activeFile = await this.getActiveFileInfo();
+        const textSelection = this.getTextSelectionInfo();
+        const openTabs = this.getOpenTabsInfo();
+        const diffs = await this.getDiffsInfo();
+        const diagnostics = await this.getDiagnosticsInfo();
+
+        return {
+            activeFile,
+            textSelection,
+            openTabs,
+            diffs,
+            diagnostics,
+            timestamp: Date.now()
+        };
     }
 
-    async executeCommand(cmd: CommandRequest) {
+    async executeCommand(cmd: CommandRequest): Promise<CommandResponse> {
+        const { command, arguments: args = [], options = {} } = cmd;
+        switch (command) {
+            case 'openFile':
+                return await this.openFile(args[0], options);
+            case 'writeFile':
+                return await this.writeFile(args[0], args[1]);
+            case 'deleteFile':
+                return await this.deleteFile(args[0]);
+            case 'selectText':
+                return await this.selectText(args[0], args[1], args[2], args[3]);
+            case 'showNotification':
+                return await this.showNotification(args[0], options.type || 'info');
+            default:
+                return {
+                    success: false,
+                    error: `Unknown command: ${command}`,
+                    message: `Failed to execute command: ${command}`
+                };
+        }
     }
 
     private getLangFromUri(uri: vscode.Uri): string {
@@ -79,55 +112,6 @@ export class ContextProvider {
         })
 
         return openTabs;
-    }
-
-    private async getDiffInfo(): Promise<DiffInfo[]> {
-        const diffs: DiffInfo[] = [];
-        const shareDiffs = this.config.get<boolean>('shareDiffs', true);
-        if (!shareDiffs) {
-            return diffs;
-        }
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders) {
-            return diffs;
-        }
-
-        const gitExtension = vscode.extensions.getExtension('vscode.git')?.exports;
-        const gitApi = gitExtension?.getAPI(1);
-
-        if (gitApi) {
-            for (const repo of gitApi.repositories) {
-                for (const change of repo.state.workingTreeChanges) {
-                    const filePath = change.uri.fsPath;
-                    const fileName = change.uri.path.split('/').pop() || change.uri.path.split('\\').pop() || 'unknown';
-
-                    let diffText = '';
-                    try {
-                        diffText = await repo.diffWithHEAD(filePath);
-                    } catch (e) {
-                        diffs.push({
-                            filePath,
-                            fileName,
-                            changes: [{
-                                type: 'modify',
-                                lineNumber: 1,
-                                newText: 'File has changes (diff unavailable)'
-                            }]
-                        });
-                        continue;
-                    }
-
-                    const changes = this.parseGitDiff(diffText);
-
-                    diffs.push({
-                        filePath,
-                        fileName,
-                        changes
-                    });
-                }
-            }
-        }
-        return diffs;
     }
 
     private async getDiffsInfo(): Promise<DiffInfo[]> {
