@@ -46,3 +46,27 @@ export interface DiffChange {
     originalText?: string;
     newText?: string;
 }
+
+export interface DiagnosticInfo {
+    filePath: string;
+    fileName: string;
+    diagnostics: Diagnostic[];
+}
+
+export interface Diagnostic {
+    message: string;
+    severity: 'error' | 'warning' | 'info' | 'hint';
+    range: {
+        start: { line: number; character: number };
+        end: { line: number; character: number };
+    };
+    source?: string;
+    code?: string | number;
+}
+
+export interface CommandResponse {
+    success: boolean;
+    data?: any;
+    error?: string;
+    message: string;
+}
