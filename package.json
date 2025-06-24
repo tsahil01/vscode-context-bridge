@@ -8,7 +8,8 @@
   },
   "activationEvents": [
     "onCommand:vscode-context-bridge.startServer",
-    "onCommand:vscode-context-bridge.stopServer"
+    "onCommand:vscode-context-bridge.stopServer",
+    "onStartupFinished"
   ],
   "main": "dist/extension.js",
   "contributes": {
