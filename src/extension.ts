@@ -22,9 +22,20 @@ export function activate(contenxt: vscode.ExtensionContext) {
 
     contenxt.subscriptions.push(startServerCmd, stopServerCmd, showStatusCmd);
 
-    // Restore last known server state
     const wasRunning = contenxt.globalState.get<boolean>('contextBridgeServerRunning', false);
     statusBarManager.updateStatus(wasRunning);
+
+    vscode.window.onDidChangeActiveTextEditor(() => {
+        contextProvider?.getContext().then(ctx => contextProvider?.emit('contextChanged', ctx));
+    });
+
+    vscode.window.onDidChangeTextEditorSelection(() => {
+        contextProvider?.getContext().then(ctx => contextProvider?.emit('contextChanged', ctx));
+    });
+
+    vscode.workspace.onDidChangeTextDocument(() => {
+        contextProvider?.getContext().then(ctx => contextProvider?.emit('contextChanged', ctx));
+    });
 }
 
 export function deactivate() {
