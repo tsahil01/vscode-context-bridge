@@ -1,11 +1,13 @@
 import * as vscode from 'vscode';
+import { EventEmitter } from 'events';
 import { ActiveFileInfo, CommandRequest, CommandResponse, ContextData, DiagnosticInfo, DiffChange, DiffInfo, OpenTabInfo, TextSelectionInfo } from '../types';
 import { languageMap } from '../const';
 
-export class ContextProvider {
+export class ContextProvider extends EventEmitter {
     private config: vscode.WorkspaceConfiguration;
 
     constructor() {
+        super();
         this.config = vscode.workspace.getConfiguration('vscodeContextBridge');
     }
 
@@ -230,6 +232,9 @@ export class ContextProvider {
             const document = await vscode.workspace.openTextDocument(uri);
             await vscode.window.showTextDocument(document, options);
 
+            const context = await this.getContext();
+            this.emit('contextChanged', context);
+
             return {
                 success: true,
                 data: { filePath },
@@ -299,6 +304,9 @@ export class ContextProvider {
 
             activeEditor.selection = selection;
             activeEditor.revealRange(selection);
+
+            const context = await this.getContext();
+            this.emit('contextChanged', context);
             return {
                 success: true,
                 data: { startLine, startChar, endLine, endChar },

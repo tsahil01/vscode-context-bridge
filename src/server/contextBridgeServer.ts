@@ -4,7 +4,7 @@ import * as WebSocket from 'ws';
 import { ContextProvider } from '../provider/contextProvider';
 import { CommandRequest, CommandResponse, ContextData } from '../types';
 
-export class contextBridgeServer {
+export class ContextBridgeServer {
     private server: http.Server | undefined;
     private wss: WebSocket.Server | undefined;
     private port: number;
