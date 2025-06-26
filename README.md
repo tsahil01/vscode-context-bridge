@@ -23,6 +23,7 @@ This can be useful for building integrations, tools, or services that need to in
 - **Code Diffs**: Retrieve code changes and modifications in the workspace
 - **Diagnostics**: Access linting errors, warnings, and other diagnostics
 - **Command Execution**: Send commands to VS Code from external processes
+- **Change Proposals**: External tools can propose code changes with accept/reject interface
 - **Configurable**: Control what information is shared for privacy
 
 ## Installation
@@ -170,12 +171,42 @@ Execute a command in VS Code.
 }
 ```
 
+#### POST /propose-change
+Propose a code change that will be shown to the user with accept/reject options.
+
+**Request:**
+```json
+{
+    "title": "Add error handling",
+    "description": "This change adds try-catch error handling to improve code reliability",
+    "filePath": "/path/to/file.js",
+    "originalContent": "function getData() {\n    const data = JSON.parse(response);\n    return data;\n}",
+    "proposedContent": "function getData() {\n    try {\n        const data = JSON.parse(response);\n        return data;\n    } catch (error) {\n        console.error('Failed to parse response:', error);\n        return null;\n    }\n}",
+    "startLine": 10,
+    "endLine": 13
+}
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "data": {
+        "proposalId": "change_1640995200000_abc123"
+    },
+    "message": "Change proposal created"
+}
+```
+
 **Available Commands:**
 - `openFile(filePath, options)`: Open a file in editor
 - `selectText(startLine, startChar, endLine, endChar)`: Select text in the active editor
 - `writeFile(filePath, content)`: Write content to a file
 - `deleteFile(filePath)`: Delete a file
 - `showNotification(message, type)`: Show a notification (type: 'info', 'warning', 'error')
+- `proposeChange(proposalRequest)`: Propose a code change with accept/reject dialog
+- `acceptProposal(proposalId)`: Accept a change proposal
+- `rejectProposal(proposalId)`: Reject a change proposal
 - `getContext()`: Get all context information
 - `getActiveFile()`: Get active file information
 - `getSelection()`: Get current text selection

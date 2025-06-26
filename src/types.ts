@@ -1,4 +1,3 @@
-
 export interface CommandRequest {
     command: string;
     arguments?: any[];
@@ -78,4 +77,33 @@ export interface ContextData {
     diffs: DiffInfo[] | null;
     diagnostics: DiagnosticInfo[] | null;
     timestamp: number;
+}
+
+export interface ChangeProposal {
+    id: string;
+    title: string;
+    description: string;
+    filePath: string;
+    originalContent: string;
+    proposedContent: string;
+    startLine?: number;
+    endLine?: number;
+    timestamp: number;
+}
+
+export interface ChangeProposalRequest {
+    title: string;
+    description: string;
+    filePath: string;
+    originalContent: string;
+    proposedContent: string;
+    startLine?: number;
+    endLine?: number;
+}
+
+export interface ChangeProposalResponse {
+    success: boolean;
+    proposalId?: string;
+    error?: string;
+    message: string;
 }

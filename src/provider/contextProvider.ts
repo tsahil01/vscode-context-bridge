@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 import { EventEmitter } from 'events';
-import { ActiveFileInfo, CommandRequest, CommandResponse, ContextData, DiagnosticInfo, DiffChange, DiffInfo, OpenTabInfo, TextSelectionInfo } from '../types';
+import { ActiveFileInfo, CommandRequest, CommandResponse, ContextData, DiagnosticInfo, DiffChange, DiffInfo, OpenTabInfo, TextSelectionInfo, ChangeProposal, ChangeProposalRequest, ChangeProposalResponse } from '../types';
 import { languageMap } from '../const';
 
 export class ContextProvider extends EventEmitter {
     private config: vscode.WorkspaceConfiguration;
+    private changeProposals: Map<string, ChangeProposal> = new Map();
 
     constructor() {
         super();
@@ -42,6 +43,12 @@ export class ContextProvider extends EventEmitter {
                 return await this.selectText(args[0], args[1], args[2], args[3]);
             case 'showNotification':
                 return await this.showNotification(args[0], options.type || 'info');
+            case 'proposeChange':
+                return await this.proposeChange(args[0]);
+            case 'acceptProposal':
+                return await this.acceptProposal(args[0]);
+            case 'rejectProposal':
+                return await this.rejectProposal(args[0]);
             default:
                 return {
                     success: false,
@@ -364,5 +371,178 @@ export class ContextProvider extends EventEmitter {
         }
     }
 
+    private async proposeChange(request: ChangeProposalRequest): Promise<ChangeProposalResponse> {
+        try {
+            const proposalId = `change_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const proposal: ChangeProposal = {
+                id: proposalId,
+                title: request.title,
+                description: request.description,
+                filePath: request.filePath,
+                originalContent: request.originalContent,
+                proposedContent: request.proposedContent,
+                startLine: request.startLine,
+                endLine: request.endLine,
+                timestamp: Date.now()
+            };
+
+            this.changeProposals.set(proposalId, proposal);
+            
+            let messageText = `${proposal.title}\n\n${proposal.description}`;
+            
+            const action = await vscode.window.showInformationMessage(
+                messageText,
+                'View Changes',
+                'Accept',
+                'Reject'
+            );
+
+            if (action === 'View Changes') {
+                await this.showChangePreview(proposal);
+                
+                const secondAction = await vscode.window.showInformationMessage(
+                    `${proposal.title}\n\nAfter reviewing the changes, what would you like to do?`,
+                    'Accept',
+                    'Reject'
+                );
+                
+                if (secondAction === 'Accept') {
+                    return await this.acceptProposal(proposalId);
+                } else {
+                    return await this.rejectProposal(proposalId);
+                }
+            } else if (action === 'Accept') {
+                return await this.acceptProposal(proposalId);
+            } else if (action === 'Reject') {
+                return await this.rejectProposal(proposalId);
+            }
+
+            return await this.rejectProposal(proposalId);
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : "Unknown error",
+                message: 'Failed to create change proposal'
+            };
+        }
+    }
+
+    private async acceptProposal(proposalId: string): Promise<CommandResponse> {
+        try {
+            const proposal = this.changeProposals.get(proposalId);
+            if (!proposal) {
+                return {
+                    success: false,
+                    error: 'Proposal not found',
+                    message: `Proposal ${proposalId} not found`
+                };
+            }
+
+            const uri = vscode.Uri.file(proposal.filePath);
+            const document = await vscode.workspace.openTextDocument(uri);
+            const edit = new vscode.WorkspaceEdit();
+
+            if (proposal.startLine !== undefined && proposal.endLine !== undefined) {
+                if (proposal.startLine < 0 || proposal.endLine < 0) {
+                    throw new Error(`Invalid line numbers: startLine=${proposal.startLine}, endLine=${proposal.endLine}`);
+                }
+                if (proposal.startLine > proposal.endLine) {
+                    throw new Error(`startLine (${proposal.startLine}) cannot be greater than endLine (${proposal.endLine})`);
+                }
+                if (proposal.endLine >= document.lineCount) {
+                    throw new Error(`endLine (${proposal.endLine}) exceeds document line count (${document.lineCount})`);
+                }
+
+                const startPosition = new vscode.Position(proposal.startLine, 0);
+                const endPosition = new vscode.Position(proposal.endLine + 1, 0);
+                edit.replace(uri, new vscode.Range(startPosition, endPosition), proposal.proposedContent + '\n');
+            } else {
+                edit.replace(uri, new vscode.Range(0, 0, document.lineCount, 0), proposal.proposedContent);
+            }
+
+            await vscode.workspace.applyEdit(edit);
+            await document.save();
+
+            this.changeProposals.delete(proposalId);
+
+            const diffView = vscode.window.visibleTextEditors.find(editor => editor.document.uri.scheme === 'untitled');
+            if (diffView) {
+                await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+            }
+
+            return {
+                success: true,
+                data: { proposalId, filePath: proposal.filePath },
+                message: `Change proposal ${proposalId} accepted and applied`
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : "Unknown error",
+                message: `Failed to accept proposal ${proposalId}`
+            };
+        }
+    }
+
+    private async rejectProposal(proposalId: string): Promise<CommandResponse> {
+        try {
+            const proposal = this.changeProposals.get(proposalId);
+            if (!proposal) {
+                return {
+                    success: false,
+                    error: 'Proposal not found',
+                    message: `Proposal ${proposalId} not found`
+                };
+            }
+
+            this.changeProposals.delete(proposalId);
+
+            const diffView = vscode.window.visibleTextEditors.find(editor => editor.document.uri.scheme === 'untitled');
+            if (diffView) {
+                await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
+            }
+
+            return {
+                success: true,
+                data: { proposalId },
+                message: `Change proposal ${proposalId} rejected`
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : "Unknown error",
+                message: `Failed to reject proposal ${proposalId}`
+            };
+        }
+    }
+
+    private async showChangePreview(proposal: ChangeProposal): Promise<void> {
+        try {
+            const originalUri = vscode.Uri.parse(`untitled:${proposal.filePath}.original`);
+            const proposedUri = vscode.Uri.parse(`untitled:${proposal.filePath}.proposed`);
+
+            await vscode.commands.executeCommand('vscode.diff', 
+                originalUri, 
+                proposedUri, 
+                `${proposal.title} - Changes Preview`,
+                {
+                    preview: true
+                }
+            );
+
+            const originalEdit = new vscode.WorkspaceEdit();
+            const proposedEdit = new vscode.WorkspaceEdit();
+
+            originalEdit.insert(originalUri, new vscode.Position(0, 0), proposal.originalContent);
+            proposedEdit.insert(proposedUri, new vscode.Position(0, 0), proposal.proposedContent);
+
+            await vscode.workspace.applyEdit(originalEdit);
+            await vscode.workspace.applyEdit(proposedEdit);
+
+        } catch (error) {
+            console.error('Failed to show change preview:', error);
+            vscode.window.showErrorMessage('Failed to show change preview');
+        }
+    }
 
 }

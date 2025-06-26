@@ -56,6 +56,20 @@ export class ContextBridgeServer {
             }
         });
 
+        this.app.post('/propose-change', async (req: Request, res: Response) => {
+            try {
+                const proposalRequest = req.body;
+                const commandRequest: CommandRequest = {
+                    command: 'proposeChange',
+                    arguments: [proposalRequest]
+                };
+                const response = await this.handleCommandRequest(commandRequest);
+                res.status(200).json(response);
+            } catch (error) {
+                res.status(400).json({ error: 'Invalid change proposal format' });
+            }
+        });
+
         this.app.get('/health', (req: Request, res: Response) => {
             res.status(200).json({ status: 'ok', server: 'running' });
         });
