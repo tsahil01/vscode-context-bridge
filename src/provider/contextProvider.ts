@@ -387,54 +387,34 @@ export class ContextProvider extends EventEmitter {
             };
 
             this.changeProposals.set(proposalId, proposal);
-            
-            let messageText = `${proposal.title}\n\n${proposal.description}`;
-            
-            const action = await vscode.window.showInformationMessage(
-                messageText,
-                'View Changes',
-                'Accept',
-                'Reject'
-            );
 
-            if (action === 'View Changes') {
-                await this.showChangePreview(proposal);
-                
-                const secondAction = await vscode.window.showInformationMessage(
-                    `${proposal.title}\n\nAfter reviewing the changes, what would you like to do?`,
-                    'Accept',
-                    'Reject'
-                );
-                
-                if (secondAction === 'Accept') {
-                    return await this.acceptProposal(proposalId);
-                } else {
-                    return await this.rejectProposal(proposalId);
-                }
-            } else if (action === 'Accept') {
-                return await this.acceptProposal(proposalId);
-            } else if (action === 'Reject') {
-                return await this.rejectProposal(proposalId);
-            }
+            await this.showInlineDiff(proposal);
 
-            return await this.rejectProposal(proposalId);
+            return {
+                success: true,
+                proposalId: proposalId,
+                message: `Change preview displayed inline for proposal ${proposalId}.`,
+                accepted: false
+            };
         } catch (error) {
             return {
                 success: false,
                 error: error instanceof Error ? error.message : "Unknown error",
-                message: 'Failed to create change proposal'
+                message: 'Failed to create change proposal',
+                accepted: false
             };
         }
     }
 
-    private async acceptProposal(proposalId: string): Promise<CommandResponse> {
+    private async acceptProposal(proposalId: string): Promise<ChangeProposalResponse> {
         try {
             const proposal = this.changeProposals.get(proposalId);
             if (!proposal) {
                 return {
                     success: false,
                     error: 'Proposal not found',
-                    message: `Proposal ${proposalId} not found`
+                    message: `Proposal ${proposalId} not found`,
+                    accepted: false
                 };
             }
 
@@ -465,83 +445,129 @@ export class ContextProvider extends EventEmitter {
 
             this.changeProposals.delete(proposalId);
 
-            const diffView = vscode.window.visibleTextEditors.find(editor => editor.document.uri.scheme === 'untitled');
-            if (diffView) {
-                await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
-            }
-
             return {
                 success: true,
                 data: { proposalId, filePath: proposal.filePath },
-                message: `Change proposal ${proposalId} accepted and applied`
+                message: `Change proposal ${proposalId} accepted and applied`,
+                accepted: true
             };
         } catch (error) {
             return {
                 success: false,
                 error: error instanceof Error ? error.message : "Unknown error",
-                message: `Failed to accept proposal ${proposalId}`
+                message: `Failed to accept proposal ${proposalId}`,
+                accepted: false
             };
         }
     }
 
-    private async rejectProposal(proposalId: string): Promise<CommandResponse> {
+    private async rejectProposal(proposalId: string): Promise<ChangeProposalResponse> {
         try {
             const proposal = this.changeProposals.get(proposalId);
             if (!proposal) {
                 return {
                     success: false,
                     error: 'Proposal not found',
-                    message: `Proposal ${proposalId} not found`
+                    message: `Proposal ${proposalId} not found`,
+                    accepted: false
                 };
             }
 
             this.changeProposals.delete(proposalId);
 
-            const diffView = vscode.window.visibleTextEditors.find(editor => editor.document.uri.scheme === 'untitled');
-            if (diffView) {
-                await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
-            }
-
             return {
                 success: true,
                 data: { proposalId },
-                message: `Change proposal ${proposalId} rejected`
+                message: `Change proposal ${proposalId} rejected`,
+                accepted: false
             };
         } catch (error) {
             return {
                 success: false,
                 error: error instanceof Error ? error.message : "Unknown error",
-                message: `Failed to reject proposal ${proposalId}`
+                message: `Failed to reject proposal ${proposalId}`,
+                accepted: false
             };
         }
     }
 
-    private async showChangePreview(proposal: ChangeProposal): Promise<void> {
+    private async showInlineDiff(proposal: ChangeProposal): Promise<void> {
         try {
-            const originalUri = vscode.Uri.parse(`untitled:${proposal.filePath}.original`);
-            const proposedUri = vscode.Uri.parse(`untitled:${proposal.filePath}.proposed`);
+            // Open the target file
+            const uri = vscode.Uri.file(proposal.filePath);
+            const document = await vscode.workspace.openTextDocument(uri);
+            const editor = await vscode.window.showTextDocument(document);
 
-            await vscode.commands.executeCommand('vscode.diff', 
-                originalUri, 
-                proposedUri, 
-                `${proposal.title} - Changes Preview`,
-                {
-                    preview: true
+            // Create decoration types for deletions and additions
+            const deletionDecoration = vscode.window.createTextEditorDecorationType({
+                backgroundColor: 'rgba(255, 0, 0, 0.3)',
+                border: '1px solid rgba(255, 0, 0, 0.6)',
+                overviewRulerColor: 'rgba(255, 0, 0, 0.8)',
+                overviewRulerLane: vscode.OverviewRulerLane.Left,
+                before: {
+                    contentText: '- ',
+                    color: 'rgba(255, 0, 0, 0.8)',
+                    fontWeight: 'bold'
                 }
+            });
+
+            const additionDecoration = vscode.window.createTextEditorDecorationType({
+                backgroundColor: 'rgba(0, 255, 0, 0.2)',
+                border: '1px solid rgba(0, 255, 0, 0.6)',
+                overviewRulerColor: 'rgba(0, 255, 0, 0.8)',
+                overviewRulerLane: vscode.OverviewRulerLane.Right,
+                after: {
+                    contentText: ` → ${proposal.proposedContent}`,
+                    color: 'rgba(0, 120, 0, 0.9)',
+                    fontStyle: 'italic',
+                    margin: '0 0 0 10px'
+                }
+            });
+
+            if (proposal.startLine !== undefined && proposal.endLine !== undefined) {
+                // Highlight what will be deleted (current content)
+                const deletionRange = new vscode.Range(
+                    new vscode.Position(proposal.startLine, 0),
+                    new vscode.Position(proposal.endLine, document.lineAt(proposal.endLine).text.length)
+                );
+
+                // Highlight where the addition will go
+                const additionRange = new vscode.Range(
+                    new vscode.Position(proposal.endLine, document.lineAt(proposal.endLine).text.length),
+                    new vscode.Position(proposal.endLine, document.lineAt(proposal.endLine).text.length)
+                );
+
+                editor.setDecorations(deletionDecoration, [deletionRange]);
+                editor.setDecorations(additionDecoration, [additionRange]);
+            }
+
+            // Focus on the change area
+            const targetLine = proposal.startLine || 0;
+            editor.revealRange(new vscode.Range(targetLine, 0, targetLine, 0), vscode.TextEditorRevealType.InCenter);
+
+            // Show accept/reject notification (non-modal)
+            const action = await vscode.window.showInformationMessage(
+                `${proposal.title} - Review the highlighted changes in the editor`,
+                { modal: false },
+                'Accept Changes',
+                'Reject Changes'
             );
 
-            const originalEdit = new vscode.WorkspaceEdit();
-            const proposedEdit = new vscode.WorkspaceEdit();
+            // Clean up decorations
+            deletionDecoration.dispose();
+            additionDecoration.dispose();
 
-            originalEdit.insert(originalUri, new vscode.Position(0, 0), proposal.originalContent);
-            proposedEdit.insert(proposedUri, new vscode.Position(0, 0), proposal.proposedContent);
-
-            await vscode.workspace.applyEdit(originalEdit);
-            await vscode.workspace.applyEdit(proposedEdit);
+            if (action === 'Accept Changes') {
+                await this.acceptProposal(proposal.id);
+                vscode.window.showInformationMessage('Changes accepted and applied!');
+            } else if (action === 'Reject Changes') {
+                await this.rejectProposal(proposal.id);
+                vscode.window.showInformationMessage('Changes rejected.');
+            }
 
         } catch (error) {
-            console.error('Failed to show change preview:', error);
-            vscode.window.showErrorMessage('Failed to show change preview');
+            console.error('Failed to show inline diff:', error);
+            vscode.window.showErrorMessage('Failed to show inline diff preview');
         }
     }
 

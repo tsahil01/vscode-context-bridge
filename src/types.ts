@@ -104,6 +104,8 @@ export interface ChangeProposalRequest {
 export interface ChangeProposalResponse {
     success: boolean;
     proposalId?: string;
+    data?: any;
     error?: string;
     message: string;
+    accepted: boolean;
 }
