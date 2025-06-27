@@ -383,11 +383,12 @@ export class ContextProvider extends EventEmitter {
                 proposedContent: request.proposedContent,
                 startLine: request.startLine,
                 endLine: request.endLine,
+                changes: request.changes,
                 timestamp: Date.now()
             };
 
             this.changeProposals.set(proposalId, proposal);
-
+            
             await this.showInlineDiff(proposal);
 
             return {
@@ -422,22 +423,49 @@ export class ContextProvider extends EventEmitter {
             const document = await vscode.workspace.openTextDocument(uri);
             const edit = new vscode.WorkspaceEdit();
 
-            if (proposal.startLine !== undefined && proposal.endLine !== undefined) {
-                if (proposal.startLine < 0 || proposal.endLine < 0) {
-                    throw new Error(`Invalid line numbers: startLine=${proposal.startLine}, endLine=${proposal.endLine}`);
+            if (proposal.changes && proposal.changes.length > 0) {
+                const sortedChanges = [...proposal.changes]
+                    .map(change => ({
+                        ...change,
+                        startLine: change.startLine - 1, // Convert to 0-based
+                        endLine: change.endLine - 1      // Convert to 0-based
+                    }))
+                    .sort((a, b) => b.startLine - a.startLine);
+                
+                for (const change of sortedChanges) {
+                    if (change.startLine < 0 || change.endLine < 0) {
+                        throw new Error(`Invalid line numbers: startLine=${change.startLine + 1}, endLine=${change.endLine + 1} (1-based)`);
+                    }
+                    if (change.startLine > change.endLine) {
+                        throw new Error(`startLine (${change.startLine + 1}) cannot be greater than endLine (${change.endLine + 1}) (1-based)`);
+                    }
+                    if (change.endLine >= document.lineCount) {
+                        throw new Error(`endLine (${change.endLine + 1}) exceeds document line count (${document.lineCount}) (1-based)`);
+                    }
+
+                    const startPosition = new vscode.Position(change.startLine, 0);
+                    const endPosition = new vscode.Position(change.endLine + 1, 0);
+                    edit.replace(uri, new vscode.Range(startPosition, endPosition), change.proposedContent + '\n');
                 }
-                if (proposal.startLine > proposal.endLine) {
-                    throw new Error(`startLine (${proposal.startLine}) cannot be greater than endLine (${proposal.endLine})`);
+            } else if (proposal.startLine !== undefined && proposal.endLine !== undefined && proposal.proposedContent) {
+                const startLine = proposal.startLine - 1;
+                const endLine = proposal.endLine - 1;
+                
+                if (startLine < 0 || endLine < 0) {
+                    throw new Error(`Invalid line numbers: startLine=${proposal.startLine}, endLine=${proposal.endLine} (1-based)`);
                 }
-                if (proposal.endLine >= document.lineCount) {
-                    throw new Error(`endLine (${proposal.endLine}) exceeds document line count (${document.lineCount})`);
+                if (startLine > endLine) {
+                    throw new Error(`startLine (${proposal.startLine}) cannot be greater than endLine (${proposal.endLine}) (1-based)`);
+                }
+                if (endLine >= document.lineCount) {
+                    throw new Error(`endLine (${proposal.endLine}) exceeds document line count (${document.lineCount}) (1-based)`);
                 }
 
-                const startPosition = new vscode.Position(proposal.startLine, 0);
-                const endPosition = new vscode.Position(proposal.endLine + 1, 0);
+                const startPosition = new vscode.Position(startLine, 0);
+                const endPosition = new vscode.Position(endLine + 1, 0);
                 edit.replace(uri, new vscode.Range(startPosition, endPosition), proposal.proposedContent + '\n');
             } else {
-                edit.replace(uri, new vscode.Range(0, 0, document.lineCount, 0), proposal.proposedContent);
+                throw new Error('No valid changes found in proposal');
             }
 
             await vscode.workspace.applyEdit(edit);
@@ -493,12 +521,10 @@ export class ContextProvider extends EventEmitter {
 
     private async showInlineDiff(proposal: ChangeProposal): Promise<void> {
         try {
-            // Open the target file
             const uri = vscode.Uri.file(proposal.filePath);
             const document = await vscode.workspace.openTextDocument(uri);
             const editor = await vscode.window.showTextDocument(document);
-
-            // Create decoration types for deletions and additions
+            
             const deletionDecoration = vscode.window.createTextEditorDecorationType({
                 backgroundColor: 'rgba(255, 0, 0, 0.3)',
                 border: '1px solid rgba(255, 0, 0, 0.6)',
@@ -510,53 +536,132 @@ export class ContextProvider extends EventEmitter {
                     fontWeight: 'bold'
                 }
             });
-
+            
             const additionDecoration = vscode.window.createTextEditorDecorationType({
                 backgroundColor: 'rgba(0, 255, 0, 0.2)',
                 border: '1px solid rgba(0, 255, 0, 0.6)',
                 overviewRulerColor: 'rgba(0, 255, 0, 0.8)',
                 overviewRulerLane: vscode.OverviewRulerLane.Right,
-                after: {
-                    contentText: ` → ${proposal.proposedContent}`,
-                    color: 'rgba(0, 120, 0, 0.9)',
-                    fontStyle: 'italic',
-                    margin: '0 0 0 10px'
+                before: {
+                    contentText: '+ ',
+                    color: 'rgba(0, 150, 0, 0.8)',
+                    fontWeight: 'bold'
                 }
             });
 
-            if (proposal.startLine !== undefined && proposal.endLine !== undefined) {
-                // Highlight what will be deleted (current content)
-                const deletionRange = new vscode.Range(
-                    new vscode.Position(proposal.startLine, 0),
-                    new vscode.Position(proposal.endLine, document.lineAt(proposal.endLine).text.length)
-                );
+            const deletionRanges: vscode.Range[] = [];
+            const additionRanges: vscode.DecorationOptions[] = [];
+            let focusLine = 0;
 
-                // Highlight where the addition will go
-                const additionRange = new vscode.Range(
-                    new vscode.Position(proposal.endLine, document.lineAt(proposal.endLine).text.length),
-                    new vscode.Position(proposal.endLine, document.lineAt(proposal.endLine).text.length)
-                );
+            if (proposal.changes && proposal.changes.length > 0) {
+                for (const change of proposal.changes) {
+                    const startLine = change.startLine - 1;
+                    const endLine = change.endLine - 1;
+                    
+                    if (startLine < 0 || endLine < 0 || startLine > endLine) {
+                        continue; 
+                    }
+                    if (endLine >= document.lineCount) {
+                        continue;
+                    }
 
-                editor.setDecorations(deletionDecoration, [deletionRange]);
-                editor.setDecorations(additionDecoration, [additionRange]);
+                    const deletionRange = new vscode.Range(
+                        new vscode.Position(startLine, 0),
+                        new vscode.Position(endLine, document.lineAt(endLine).text.length)
+                    );
+                    deletionRanges.push(deletionRange);
+
+                    const proposedLines = change.proposedContent.split('\n');
+                    for (let i = 0; i < proposedLines.length; i++) {
+                        if (proposedLines[i].trim() || i === 0) {
+                            const additionOption: vscode.DecorationOptions = {
+                                range: new vscode.Range(
+                                    new vscode.Position(endLine + 1 + i, 0),
+                                    new vscode.Position(endLine + 1 + i, 0)
+                                ),
+                                renderOptions: {
+                                    after: {
+                                        contentText: proposedLines[i] || ' ',
+                                        color: 'rgba(0, 120, 0, 0.9)',
+                                        backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                                        border: '1px solid rgba(0, 255, 0, 0.3)',
+                                        margin: '0 0 0 10px',
+                                        fontStyle: 'italic'
+                                    }
+                                }
+                            };
+                            additionRanges.push(additionOption);
+                        }
+                    }
+
+                    if (focusLine === 0) {
+                        focusLine = startLine;
+                    }
+                }
+            } else if (proposal.startLine !== undefined && proposal.endLine !== undefined && proposal.proposedContent) {
+                const startLine = proposal.startLine - 1;
+                const endLine = proposal.endLine - 1;
+                
+                if (startLine >= 0 && endLine >= 0 && 
+                    startLine <= endLine && endLine < document.lineCount) {
+                    
+                    const deletionRange = new vscode.Range(
+                        new vscode.Position(startLine, 0),
+                        new vscode.Position(endLine, document.lineAt(endLine).text.length)
+                    );
+                    deletionRanges.push(deletionRange);
+
+                    const proposedLines = proposal.proposedContent.split('\n');
+                    for (let i = 0; i < proposedLines.length; i++) {
+                        if (proposedLines[i].trim() || i === 0) {
+                            const additionOption: vscode.DecorationOptions = {
+                                range: new vscode.Range(
+                                    new vscode.Position(endLine + 1 + i, 0),
+                                    new vscode.Position(endLine + 1 + i, 0)
+                                ),
+                                renderOptions: {
+                                    after: {
+                                        contentText: proposedLines[i] || ' ',
+                                        color: 'rgba(0, 120, 0, 0.9)',
+                                        backgroundColor: 'rgba(0, 255, 0, 0.1)',
+                                        border: '1px solid rgba(0, 255, 0, 0.3)',
+                                        margin: '0 0 0 10px',
+                                        fontStyle: 'italic'
+                                    }
+                                }
+                            };
+                            additionRanges.push(additionOption);
+                        }
+                    }
+                    
+                    focusLine = startLine;
+                }
             }
 
-            // Focus on the change area
-            const targetLine = proposal.startLine || 0;
-            editor.revealRange(new vscode.Range(targetLine, 0, targetLine, 0), vscode.TextEditorRevealType.InCenter);
+            if (deletionRanges.length > 0) {
+                editor.setDecorations(deletionDecoration, deletionRanges);
+            }
+            if (additionRanges.length > 0) {
+                editor.setDecorations(additionDecoration, additionRanges);
+            }
 
-            // Show accept/reject notification (non-modal)
+            editor.revealRange(new vscode.Range(focusLine, 0, focusLine, 0), vscode.TextEditorRevealType.InCenter);
+            
+            const changeCount = proposal.changes ? proposal.changes.length : 1;
             const action = await vscode.window.showInformationMessage(
-                `${proposal.title} - Review the highlighted changes in the editor`,
+                `${proposal.title} - Review ${changeCount} highlighted change(s) in the editor`,
                 { modal: false },
                 'Accept Changes',
                 'Reject Changes'
             );
-
-            // Clean up decorations
+            
+            if (!action) {
+                return;
+            }
+            
             deletionDecoration.dispose();
             additionDecoration.dispose();
-
+            
             if (action === 'Accept Changes') {
                 await this.acceptProposal(proposal.id);
                 vscode.window.showInformationMessage('Changes accepted and applied!');
