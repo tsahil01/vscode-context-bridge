@@ -411,31 +411,34 @@ export class ContextProvider extends EventEmitter {
 
             const uri = vscode.Uri.file(proposal.filePath);
             const document = await vscode.workspace.openTextDocument(uri);
-            const edit = new vscode.WorkspaceEdit();
+            let fileContent = document.getText();
 
-            const sortedChanges = [...proposal.changes]
-                .map(change => ({
-                    ...change,
-                    startLine: change.startLine - 1, // Convert to 0-based
-                    endLine: change.endLine - 1      // Convert to 0-based
-                }))
-                .sort((a, b) => b.startLine - a.startLine);
+            // Process changes in reverse order to maintain text positions
+            const sortedChanges = [...proposal.changes].reverse();
             
             for (const change of sortedChanges) {
-                if (change.startLine < 0 || change.endLine < 0) {
-                    throw new Error(`Invalid line numbers: startLine=${change.startLine + 1}, endLine=${change.endLine + 1} (1-based)`);
+                const { originalContent, proposedContent } = change;
+                
+                // Find the content to replace
+                const contentIndex = fileContent.indexOf(originalContent);
+                if (contentIndex === -1) {
+                    throw new Error(`Original content not found in file: "${originalContent.substring(0, 100)}..."`);
                 }
-                if (change.startLine > change.endLine) {
-                    throw new Error(`startLine (${change.startLine + 1}) cannot be greater than endLine (${change.endLine + 1}) (1-based)`);
+                
+                // Check if there are multiple occurrences
+                const lastIndex = fileContent.lastIndexOf(originalContent);
+                if (contentIndex !== lastIndex) {
+                    console.warn(`Multiple occurrences found for content: "${originalContent.substring(0, 50)}...". Using first occurrence.`);
                 }
-                if (change.endLine >= document.lineCount) {
-                    throw new Error(`endLine (${change.endLine + 1}) exceeds document line count (${document.lineCount}) (1-based)`);
-                }
-
-                const startPosition = new vscode.Position(change.startLine, 0);
-                const endPosition = new vscode.Position(change.endLine + 1, 0);
-                edit.replace(uri, new vscode.Range(startPosition, endPosition), change.proposedContent + '\n');
+                
+                // Replace the first occurrence
+                fileContent = fileContent.replace(originalContent, proposedContent);
             }
+
+            // Apply the complete file change
+            const fullRange = new vscode.Range(0, 0, document.lineCount, 0);
+            const edit = new vscode.WorkspaceEdit();
+            edit.replace(uri, fullRange, fileContent);
 
             await vscode.workspace.applyEdit(edit);
             await document.save();
@@ -499,31 +502,28 @@ export class ContextProvider extends EventEmitter {
             
             let proposedContent = originalContent;
             
-            const sortedChanges = [...proposal.changes]
-                .map(change => ({
-                    ...change,
-                    startLine: change.startLine - 1,
-                    endLine: change.endLine - 1
-                }))
-                .sort((a, b) => b.startLine - a.startLine);
-            
-            const lines = originalContent.split('\n');
+            // Process changes in reverse order to maintain text positions
+            const sortedChanges = [...proposal.changes].reverse();
             
             for (const change of sortedChanges) {
-                if (change.startLine < 0 || change.endLine < 0 || 
-                    change.startLine > change.endLine || 
-                    change.endLine >= lines.length) {
+                const { originalContent: changeOriginal, proposedContent: changeProposed } = change;
+                
+                // Find the content to replace
+                const contentIndex = proposedContent.indexOf(changeOriginal);
+                if (contentIndex === -1) {
+                    console.warn(`Original content not found in file: "${changeOriginal.substring(0, 50)}..."`);
                     continue;
                 }
                 
-                const beforeLines = lines.slice(0, change.startLine);
-                const afterLines = lines.slice(change.endLine + 1);
-                const newLines = change.proposedContent.split('\n');
+                // Check if there are multiple occurrences
+                const lastIndex = proposedContent.lastIndexOf(changeOriginal);
+                if (contentIndex !== lastIndex) {
+                    console.warn(`Multiple occurrences found for content: "${changeOriginal.substring(0, 50)}...". Using first occurrence.`);
+                }
                 
-                lines.splice(0, lines.length, ...beforeLines, ...newLines, ...afterLines);
+                // Replace the first occurrence
+                proposedContent = proposedContent.replace(changeOriginal, changeProposed);
             }
-            
-            proposedContent = lines.join('\n');
 
             const fileName = proposal.filePath.split('/').pop() || proposal.filePath.split('\\').pop() || 'file';
             const ext = fileName.includes('.') ? fileName.split('.').pop() : '';
