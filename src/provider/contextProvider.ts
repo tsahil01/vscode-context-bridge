@@ -377,12 +377,7 @@ export class ContextProvider extends EventEmitter {
             const proposal: ChangeProposal = {
                 id: proposalId,
                 title: request.title,
-                description: request.description,
                 filePath: request.filePath,
-                originalContent: request.originalContent,
-                proposedContent: request.proposedContent,
-                startLine: request.startLine,
-                endLine: request.endLine,
                 changes: request.changes,
                 timestamp: Date.now()
             };
@@ -418,49 +413,28 @@ export class ContextProvider extends EventEmitter {
             const document = await vscode.workspace.openTextDocument(uri);
             const edit = new vscode.WorkspaceEdit();
 
-            if (proposal.changes && proposal.changes.length > 0) {
-                const sortedChanges = [...proposal.changes]
-                    .map(change => ({
-                        ...change,
-                        startLine: change.startLine - 1, // Convert to 0-based
-                        endLine: change.endLine - 1      // Convert to 0-based
-                    }))
-                    .sort((a, b) => b.startLine - a.startLine);
-                
-                for (const change of sortedChanges) {
-                    if (change.startLine < 0 || change.endLine < 0) {
-                        throw new Error(`Invalid line numbers: startLine=${change.startLine + 1}, endLine=${change.endLine + 1} (1-based)`);
-                    }
-                    if (change.startLine > change.endLine) {
-                        throw new Error(`startLine (${change.startLine + 1}) cannot be greater than endLine (${change.endLine + 1}) (1-based)`);
-                    }
-                    if (change.endLine >= document.lineCount) {
-                        throw new Error(`endLine (${change.endLine + 1}) exceeds document line count (${document.lineCount}) (1-based)`);
-                    }
-
-                    const startPosition = new vscode.Position(change.startLine, 0);
-                    const endPosition = new vscode.Position(change.endLine + 1, 0);
-                    edit.replace(uri, new vscode.Range(startPosition, endPosition), change.proposedContent + '\n');
+            const sortedChanges = [...proposal.changes]
+                .map(change => ({
+                    ...change,
+                    startLine: change.startLine - 1, // Convert to 0-based
+                    endLine: change.endLine - 1      // Convert to 0-based
+                }))
+                .sort((a, b) => b.startLine - a.startLine);
+            
+            for (const change of sortedChanges) {
+                if (change.startLine < 0 || change.endLine < 0) {
+                    throw new Error(`Invalid line numbers: startLine=${change.startLine + 1}, endLine=${change.endLine + 1} (1-based)`);
                 }
-            } else if (proposal.startLine !== undefined && proposal.endLine !== undefined && proposal.proposedContent) {
-                const startLine = proposal.startLine - 1;
-                const endLine = proposal.endLine - 1;
-                
-                if (startLine < 0 || endLine < 0) {
-                    throw new Error(`Invalid line numbers: startLine=${proposal.startLine}, endLine=${proposal.endLine} (1-based)`);
+                if (change.startLine > change.endLine) {
+                    throw new Error(`startLine (${change.startLine + 1}) cannot be greater than endLine (${change.endLine + 1}) (1-based)`);
                 }
-                if (startLine > endLine) {
-                    throw new Error(`startLine (${proposal.startLine}) cannot be greater than endLine (${proposal.endLine}) (1-based)`);
-                }
-                if (endLine >= document.lineCount) {
-                    throw new Error(`endLine (${proposal.endLine}) exceeds document line count (${document.lineCount}) (1-based)`);
+                if (change.endLine >= document.lineCount) {
+                    throw new Error(`endLine (${change.endLine + 1}) exceeds document line count (${document.lineCount}) (1-based)`);
                 }
 
-                const startPosition = new vscode.Position(startLine, 0);
-                const endPosition = new vscode.Position(endLine + 1, 0);
-                edit.replace(uri, new vscode.Range(startPosition, endPosition), proposal.proposedContent + '\n');
-            } else {
-                throw new Error('No valid changes found in proposal');
+                const startPosition = new vscode.Position(change.startLine, 0);
+                const endPosition = new vscode.Position(change.endLine + 1, 0);
+                edit.replace(uri, new vscode.Range(startPosition, endPosition), change.proposedContent + '\n');
             }
 
             await vscode.workspace.applyEdit(edit);
@@ -525,47 +499,31 @@ export class ContextProvider extends EventEmitter {
             
             let proposedContent = originalContent;
             
-            if (proposal.changes && proposal.changes.length > 0) {
-                const sortedChanges = [...proposal.changes]
-                    .map(change => ({
-                        ...change,
-                        startLine: change.startLine - 1,
-                        endLine: change.endLine - 1
-                    }))
-                    .sort((a, b) => b.startLine - a.startLine);
-                
-                const lines = originalContent.split('\n');
-                
-                for (const change of sortedChanges) {
-                    if (change.startLine < 0 || change.endLine < 0 || 
-                        change.startLine > change.endLine || 
-                        change.endLine >= lines.length) {
-                        continue;
-                    }
-                    
-                    const beforeLines = lines.slice(0, change.startLine);
-                    const afterLines = lines.slice(change.endLine + 1);
-                    const newLines = change.proposedContent.split('\n');
-                    
-                    lines.splice(0, lines.length, ...beforeLines, ...newLines, ...afterLines);
+            const sortedChanges = [...proposal.changes]
+                .map(change => ({
+                    ...change,
+                    startLine: change.startLine - 1,
+                    endLine: change.endLine - 1
+                }))
+                .sort((a, b) => b.startLine - a.startLine);
+            
+            const lines = originalContent.split('\n');
+            
+            for (const change of sortedChanges) {
+                if (change.startLine < 0 || change.endLine < 0 || 
+                    change.startLine > change.endLine || 
+                    change.endLine >= lines.length) {
+                    continue;
                 }
                 
-                proposedContent = lines.join('\n');
-            } else if (proposal.startLine !== undefined && proposal.endLine !== undefined && proposal.proposedContent) {
-                const startLine = proposal.startLine - 1;
-                const endLine = proposal.endLine - 1;
+                const beforeLines = lines.slice(0, change.startLine);
+                const afterLines = lines.slice(change.endLine + 1);
+                const newLines = change.proposedContent.split('\n');
                 
-                if (startLine >= 0 && endLine >= 0 && startLine <= endLine) {
-                    const lines = originalContent.split('\n');
-                    if (endLine < lines.length) {
-                        const beforeLines = lines.slice(0, startLine);
-                        const afterLines = lines.slice(endLine + 1);
-                        const newLines = proposal.proposedContent.split('\n');
-                        
-                        proposedContent = [...beforeLines, ...newLines, ...afterLines].join('\n');
-                    }
-                }
+                lines.splice(0, lines.length, ...beforeLines, ...newLines, ...afterLines);
             }
+            
+            proposedContent = lines.join('\n');
 
             const fileName = proposal.filePath.split('/').pop() || proposal.filePath.split('\\').pop() || 'file';
             const ext = fileName.includes('.') ? fileName.split('.').pop() : '';
@@ -591,7 +549,7 @@ export class ContextProvider extends EventEmitter {
                 `${proposal.title} - Review Changes`
             );
             
-            const changeCount = proposal.changes ? proposal.changes.length : 1;
+            const changeCount = proposal.changes.length;
             const action = await vscode.window.showInformationMessage(
                 `${proposal.title} - Review ${changeCount} change(s)`,
                 { modal: false },

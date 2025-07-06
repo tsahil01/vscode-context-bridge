@@ -80,8 +80,8 @@ export interface ContextData {
 }
 
 export interface FileChange {
-    startLine: number;  
-    endLine: number;    
+    startLine: number; 
+    endLine: number;   
     originalContent: string;
     proposedContent: string;
     description?: string;
@@ -90,25 +90,15 @@ export interface FileChange {
 export interface ChangeProposal {
     id: string;
     title: string;
-    description: string;
     filePath: string;
-    originalContent?: string;
-    proposedContent?: string;
-    startLine?: number;  
-    endLine?: number;    
-    changes?: FileChange[];
+    changes: FileChange[];
     timestamp: number;
 }
 
 export interface ChangeProposalRequest {
     title: string;
-    description: string;
     filePath: string;
-    originalContent?: string;
-    proposedContent?: string;
-    startLine?: number;  
-    endLine?: number;    
-    changes?: FileChange[];
+    changes: FileChange[];
 }
 
 export interface ChangeProposalResponse {
