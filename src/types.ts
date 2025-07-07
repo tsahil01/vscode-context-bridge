@@ -80,9 +80,9 @@ export interface ContextData {
 }
 
 export interface FileChange {
-    originalContent: string;    // Required: exact text to find and replace
-    proposedContent: string;    // Required: new text to replace with
-    description?: string;       // Optional: description of the change
+    originalContent: string;
+    proposedContent: string;
+    description?: string;
 }
 
 export interface ChangeProposal {
