@@ -24,6 +24,9 @@ export function activate(contenxt: vscode.ExtensionContext) {
 
     const wasRunning = contenxt.globalState.get<boolean>('contextBridgeServerRunning', false);
     statusBarManager.updateStatus(wasRunning);
+    if (!contextBridgeServer || !contextBridgeServer.isRunning()) {
+        startServer();
+    }
 
     vscode.window.onDidChangeActiveTextEditor(() => {
         contextProvider?.getContext().then(ctx => contextProvider?.emit('contextChanged', ctx));
