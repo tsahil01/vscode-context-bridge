@@ -1,5 +1,9 @@
 # Context Bridge Extension
 
+```sh
+code --install-extension SahilTiwaskar.vscode-context-bridge
+```
+
 The extension exposes editor context information via HTTP and WebSocket APIs, allowing external applications to access real-time VS Code editor state. 
 This can be useful for building integrations, tools, or services that need to interact with the VS Code editor environment.
 
