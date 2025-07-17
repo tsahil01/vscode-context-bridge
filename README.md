@@ -134,8 +134,18 @@ Retrieve all context information.
             "fileName": "file.ts",
             "changes": [
                 {
-                    "type": "modify",
+                    "type": "add",
                     "lineNumber": 1,
+                    "newText": "added content"
+                },
+                {
+                    "type": "delete",
+                    "lineNumber": 2,
+                    "originalText": "deleted content"
+                },
+                {
+                    "type": "modify",
+                    "lineNumber": 3,
                     "newText": "modified content"
                 }
             ]
@@ -175,6 +185,17 @@ Execute a command in VS Code.
 }
 ```
 
+**Response:**
+```json
+{
+    "success": true,
+    "data": {
+        "filePath": "/path/to/file.ts"
+    },
+    "message": "Command executed successfully"
+}
+```
+
 #### POST /propose-change
 Propose a code change that will be shown to the user with accept/reject options.
 
@@ -182,12 +203,14 @@ Propose a code change that will be shown to the user with accept/reject options.
 ```json
 {
     "title": "Add error handling",
-    "description": "This change adds try-catch error handling to improve code reliability",
     "filePath": "/path/to/file.js",
-    "originalContent": "function getData() {\n    const data = JSON.parse(response);\n    return data;\n}",
-    "proposedContent": "function getData() {\n    try {\n        const data = JSON.parse(response);\n        return data;\n    } catch (error) {\n        console.error('Failed to parse response:', error);\n        return null;\n    }\n}",
-    "startLine": 10,
-    "endLine": 13
+    "changes": [
+        {
+            "originalContent": "function getData() {\n    const data = JSON.parse(response);\n    return data;\n}",
+            "proposedContent": "function getData() {\n    try {\n        const data = JSON.parse(response);\n        return data;\n    } catch (error) {\n        console.error('Failed to parse response:', error);\n        return null;\n    }\n}",
+            "description": "Add try-catch error handling"
+        }
+    ]
 }
 ```
 
@@ -195,10 +218,13 @@ Propose a code change that will be shown to the user with accept/reject options.
 ```json
 {
     "success": true,
+    "proposalId": "change_1640995200000_abc123",
     "data": {
-        "proposalId": "change_1640995200000_abc123"
+        "proposalId": "change_1640995200000_abc123",
+        "filePath": "/path/to/file.js"
     },
-    "message": "Change proposal created"
+    "message": "Change proposal change_1640995200000_abc123 accepted and applied",
+    "accepted": true
 }
 ```
 
@@ -211,12 +237,6 @@ Propose a code change that will be shown to the user with accept/reject options.
 - `proposeChange(proposalRequest)`: Propose a code change with accept/reject dialog
 - `acceptProposal(proposalId)`: Accept a change proposal
 - `rejectProposal(proposalId)`: Reject a change proposal
-- `getContext()`: Get all context information
-- `getActiveFile()`: Get active file information
-- `getSelection()`: Get current text selection
-- `getOpenTabs()`: Get open tabs information
-- `getDiffs()`: Get diff information
-- `getDiagnostics()`: Get diagnostics information
 
 #### GET /health
 Health check endpoint.
@@ -233,14 +253,30 @@ Health check endpoint.
 
 Connect to `ws://localhost:3210` for real-time updates.
 
-**Message Format:**
+**Client Message Types:**
+
+1. **Get Context**
 ```json
 {
-    "type": "getContext",
+    "type": "getContext"
 }
 ```
 
-**Response:**
+2. **Execute Command**
+```json
+{
+    "type": "command",
+    "command": {
+        "command": "openFile",
+        "arguments": ["/path/to/file.ts"],
+        "options": {"preview": false}
+    }
+}
+```
+
+**Server Response Types:**
+
+1. **Context Update**
 ```json
 {
     "type": "context",
@@ -249,6 +285,31 @@ Connect to `ws://localhost:3210` for real-time updates.
     }
 }
 ```
+
+2. **Command Response**
+```json
+{
+    "type": "commandResponse",
+    "data": {
+        "success": true,
+        "data": {"filePath": "/path/to/file.ts"},
+        "message": "Command executed successfully"
+    }
+}
+```
+
+3. **Error Response**
+```json
+{
+    "error": "Invalid msg format"
+}
+```
+
+**Real-time Updates:**
+The WebSocket connection automatically receives context updates when:
+- Active file changes
+- Text selection changes
+- Document content changes
 
 ## Node.js Client Example
 
